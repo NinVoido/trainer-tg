@@ -62,13 +62,17 @@ pub async fn run_test(
 
     if let Some(task) = cur_task {
         bot.send_message(msg.chat.id, task.to_string()).await?;
+
         let strings = task.clone().get_fields();
         let products = strings
             .iter()
             .map(|product| InlineKeyboardButton::callback(product, product));
 
         bot.send_message(msg.chat.id, "Выбери категорию:")
-            .reply_markup(InlineKeyboardMarkup::new([products]))
+            .reply_markup(
+                InlineKeyboardMarkup::new([products])
+                    .append_row([InlineKeyboardButton::callback("Сдать", "done")]),
+            )
             .await?;
         dialogue
             .update(State::ReceiveField {
@@ -94,35 +98,36 @@ pub async fn receive_type(
     (tasks, cur_task, answer): (Tasks, Option<Record>, Option<Record>),
     q: CallbackQuery,
 ) -> HandlerResult {
-    dbg!(answer.clone());
-    if answer.clone().unwrap().is_full() {
-        let diff = diff(&cur_task.unwrap(), &answer.unwrap()).unwrap();
-        if diff.len() == 0 {
-            bot.send_message(dialogue.chat_id(), "Все правильно!")
+    if let Some(field) = &q.data {
+        if field == &"done".to_string() {
+            let diff = diff(&cur_task.unwrap(), &answer.unwrap()).unwrap();
+            if diff.len() == 0 {
+                bot.send_message(dialogue.chat_id(), "Все правильно!")
+                    .await?;
+            } else {
+                bot.send_message(dialogue.chat_id(), format!("Отличия: {:#?}", diff))
+                    .await?;
+            }
+            dialogue
+                .update(State::RunTest {
+                    tasks,
+                    cur_task: None,
+                    answer: None,
+                })
                 .await?;
         } else {
-            bot.send_message(dialogue.chat_id(), format!("Отличия: {:#?}", diff))
+            bot.send_message(dialogue.chat_id(), format!("Введи {field}:"))
                 .await?;
+            dialogue
+                .update(State::ReceiveAns {
+                    tasks,
+                    cur_task,
+                    answer,
+                    field: field.clone(),
+                })
+                .await?;
+            bot.answer_callback_query(q.id).await?;
         }
-        dialogue
-            .update(State::RunTest {
-                tasks,
-                cur_task: None,
-                answer: None,
-            })
-            .await?;
-    } else if let Some(field) = &q.data {
-        bot.send_message(dialogue.chat_id(), format!("Введи {field}:"))
-            .await?;
-        dialogue
-            .update(State::ReceiveAns {
-                tasks,
-                cur_task,
-                answer,
-                field: field.clone(),
-            })
-            .await?;
-        bot.answer_callback_query(q.id).await?;
     }
 
     Ok(())

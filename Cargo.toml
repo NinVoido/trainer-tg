@@ -1,0 +1,16 @@
+[package]
+name = "trainer-tg"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+
+libtrainer-rs = { path = "../libtrainer-rs" }
+
+teloxide = { version = "0.12.2", features = ["macros"] }
+tokio = { version = "1.27.0", features = ["rt-multi-thread", "macros"]}
+log = "0.4.17"
+pretty_env_logger = "0.4.0"

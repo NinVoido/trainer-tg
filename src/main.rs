@@ -11,27 +11,6 @@ use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
 async fn main() {
     let bot = Bot::from_env();
 
-    /*Dispatcher::builder(
-        bot,
-        Update::filter_message()
-            .enter_dialogue::<Message, InMemStorage<State>, State>()
-            .branch(dptree::case![State::Start].endpoint(start))
-            .branch(
-                dptree::case![State::RunTest {
-                    tasks,
-                    cur_task,
-                    answer
-                }]
-                .endpoint(run_test),
-            ),
-    )
-    .dependencies(dptree::deps![InMemStorage::<State>::new()])
-    .enable_ctrlc_handler()
-    .build()
-    .dispatch()
-    .await;
-    */
-
     Dispatcher::builder(bot, schema())
         .dependencies(dptree::deps![InMemStorage::<State>::new()])
         .enable_ctrlc_handler()

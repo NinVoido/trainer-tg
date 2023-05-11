@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
 use crate::commands::Command;
-use libtrainer_rs::record::{Record, diff};
+use libtrainer_rs::record::{diff, Record};
 use libtrainer_rs::task::Tasks;
 use std::path::Path;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
@@ -56,7 +55,6 @@ pub async fn run_test(
     (mut tasks, mut cur_task, mut answer): (Tasks, Option<Record>, Option<Record>),
     msg: Message,
 ) -> HandlerResult {
-
     if cur_task.is_none() {
         cur_task = Some(tasks.get_random_task().clone());
         answer = Some(Record::copy_format(cur_task.clone().unwrap()));
@@ -90,20 +88,21 @@ pub async fn help(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
-
 pub async fn receive_type(
     bot: Bot,
     dialogue: MyDialogue,
-    (mut tasks, mut cur_task, mut answer): (Tasks, Option<Record>, Option<Record>),
+    (tasks, cur_task, answer): (Tasks, Option<Record>, Option<Record>),
     q: CallbackQuery,
 ) -> HandlerResult {
     dbg!(answer.clone());
     if answer.clone().unwrap().is_full() {
         let diff = diff(&cur_task.unwrap(), &answer.unwrap()).unwrap();
         if diff.len() == 0 {
-            bot.send_message(dialogue.chat_id(), "Все правильно!").await?;
+            bot.send_message(dialogue.chat_id(), "Все правильно!")
+                .await?;
         } else {
-            bot.send_message(dialogue.chat_id(), format!("Отличия: {:#?}", diff)).await?;
+            bot.send_message(dialogue.chat_id(), format!("Отличия: {:#?}", diff))
+                .await?;
         }
         dialogue
             .update(State::RunTest {
@@ -112,8 +111,7 @@ pub async fn receive_type(
                 answer: None,
             })
             .await?;
-    }
-    else if let Some(field) = &q.data {
+    } else if let Some(field) = &q.data {
         bot.send_message(dialogue.chat_id(), format!("Введи {field}:"))
             .await?;
         dialogue
@@ -133,12 +131,11 @@ pub async fn receive_type(
 pub async fn receive_ans(
     bot: Bot,
     dialogue: MyDialogue,
-    (mut tasks, mut cur_task, mut answer, field): (Tasks, Option<Record>, Option<Record>, String),
+    (tasks, cur_task, answer, field): (Tasks, Option<Record>, Option<Record>, String),
     msg: Message,
 ) -> HandlerResult {
     if let Some(ans) = msg.text() {
         if let Some(mut answer2) = answer {
-
             answer2.insert(&field, ans.to_string());
             dialogue
                 .update(State::ReceiveField {

@@ -5,9 +5,12 @@ use std::path::Path;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use teloxide::utils::command::BotCommands;
 use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
+use crate::dialogue::format::print_diff;
 
 type MyDialogue = Dialogue<State, InMemStorage<State>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+mod format;
 
 #[derive(Clone, Default, Debug)]
 pub enum State {
@@ -29,10 +32,6 @@ pub enum State {
         answer: Option<Record>,
         field: String,
     },
-    // PrintDiff {
-    //     tasks: Tasks,
-    //     diff: BTreeMap<String, (String, String)>,
-    // }
 }
 
 pub async fn start(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
@@ -101,13 +100,7 @@ pub async fn receive_type(
     if let Some(field) = &q.data {
         if field == &"done".to_string() {
             let diff = diff(&cur_task.unwrap(), &answer.unwrap()).unwrap();
-            if diff.len() == 0 {
-                bot.send_message(dialogue.chat_id(), "Все правильно!")
-                    .await?;
-            } else {
-                bot.send_message(dialogue.chat_id(), format!("Отличия: {:#?}", diff))
-                    .await?;
-            }
+           bot.send_message(dialogue.chat_id(), print_diff(diff)).await?;
             dialogue
                 .update(State::RunTest {
                     tasks,

@@ -1,11 +1,13 @@
 use crate::commands::Command;
+use crate::dialogue::format::print_diff;
 use libtrainer_rs::record::{diff, Record};
 use libtrainer_rs::task::Tasks;
 use std::path::Path;
+use teloxide::net::Download;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use teloxide::utils::command::BotCommands;
 use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
-use crate::dialogue::format::print_diff;
+use tokio::fs::File;
 
 type MyDialogue = Dialogue<State, InMemStorage<State>>;
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -16,6 +18,7 @@ mod format;
 pub enum State {
     #[default]
     Start,
+    ReceiveFile,
     RunTest {
         tasks: Tasks,
         cur_task: Option<Record>,
@@ -35,16 +38,45 @@ pub enum State {
 }
 
 pub async fn start(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
-    bot.send_message(msg.chat.id, "Давай начнем!").await?;
-    let mut tasks = Tasks::from_csv(Path::new("./test1.csv")).unwrap();
-    let first = tasks.get_random_task().clone();
-    dialogue
-        .update(State::RunTest {
-            tasks,
-            cur_task: Some(first.clone()),
-            answer: Some(Record::copy_format(first)),
-        })
-        .await?;
+    bot.send_message(
+        msg.chat.id,
+        "Давай начнем! Пришли .csv файл с заданиями, чтобы начать.",
+    )
+    .await?;
+
+    dialogue.update(State::ReceiveFile).await?;
+    Ok(())
+}
+
+pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
+    if let Some(doc) = msg.document() {
+        let fpath = bot.get_file(doc.file.id.clone()).await?;
+
+        let mut fout = File::create(Path::new(&format!("{}.csv", dialogue.chat_id().0))).await?;
+        bot.download_file(&*fpath.path, &mut fout).await?;
+        fout.sync_all();
+
+        let file = File::open(Path::new(&format!("{}.csv", dialogue.chat_id().0))).await?;
+
+        let mut tasks = Tasks::from_csv(&file.into_std().await).unwrap_or_default();
+
+        dialogue
+            .update(State::RunTest {
+                tasks,
+                cur_task: None,
+                answer: None,
+            })
+            .await?;
+    } else {
+        bot.send_message(dialogue.chat_id(), "Пожалуйста отправьте файл")
+            .await?;
+    }
+
+    Ok(())
+}
+pub async fn exit(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
+    dbg!("exited");
+    dialogue.exit().await?;
     Ok(())
 }
 
@@ -68,10 +100,10 @@ pub async fn run_test(
             .map(|product| InlineKeyboardButton::callback(product, product));
 
         bot.send_message(msg.chat.id, "Выбери категорию:")
-            .reply_markup(
-                InlineKeyboardMarkup::new([products])
-                    .append_row([InlineKeyboardButton::callback("Сдать", "done")]),
-            )
+            .reply_markup(InlineKeyboardMarkup::new([products]).append_row([
+                InlineKeyboardButton::callback("Сдать", "done"),
+                InlineKeyboardButton::callback("Пропустить", "skip"),
+            ]))
             .await?;
         dialogue
             .update(State::ReceiveField {
@@ -99,8 +131,22 @@ pub async fn receive_type(
 ) -> HandlerResult {
     if let Some(field) = &q.data {
         if field == &"done".to_string() {
-            let diff = diff(&cur_task.unwrap(), &answer.unwrap()).unwrap();
-           bot.send_message(dialogue.chat_id(), print_diff(diff)).await?;
+            let diff = diff(&cur_task.clone().unwrap(), &answer.unwrap()).unwrap();
+
+            let mut msg = print_diff(diff);
+            if let Some(comment) = cur_task.unwrap().comment() {
+                msg += format!("Комментарий: {}", comment).as_str()
+            }
+
+            bot.send_message(dialogue.chat_id(), msg).await?;
+            dialogue
+                .update(State::RunTest {
+                    tasks,
+                    cur_task: None,
+                    answer: None,
+                })
+                .await?;
+        } else if field == &"skip".to_string() {
             dialogue
                 .update(State::RunTest {
                     tasks,
@@ -119,10 +165,10 @@ pub async fn receive_type(
                     field: field.clone(),
                 })
                 .await?;
-            bot.answer_callback_query(q.id).await?;
         }
     }
 
+    bot.answer_callback_query(q.id).await?;
     Ok(())
 }
 
@@ -134,7 +180,19 @@ pub async fn receive_ans(
 ) -> HandlerResult {
     if let Some(ans) = msg.text() {
         if let Some(mut answer2) = answer {
-            answer2.insert(&field, ans.to_string());
+            let mut splitted: Vec<String> = Vec::new();
+
+            for i in ans.split(",") {
+                splitted.push(i.to_string());
+            }
+
+            while cur_task.clone().unwrap().field_len(&field) > splitted.len() {
+                splitted.push("".to_string());
+            }
+
+            splitted.sort();
+
+            answer2.replace(&field, splitted);
             dialogue
                 .update(State::ReceiveField {
                     tasks,
@@ -149,12 +207,3 @@ pub async fn receive_ans(
 
     Ok(())
 }
-
-// fn print_diff(
-//     bot: Bot,
-//     dialogue: MyDialogue,
-//     (mut tasks, mut diff): (Tasks, BTreeMap<String, (String, String)>),
-//     msg: Message,
-// ) -> HandlerResult {
-//
-// }

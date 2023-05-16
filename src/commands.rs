@@ -7,4 +7,6 @@ pub enum Command {
     Help,
     #[command(description = "Begin training session")]
     Start,
+    #[command(description = "Exit current session")]
+    Exit,
 }

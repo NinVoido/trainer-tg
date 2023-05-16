@@ -25,11 +25,13 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
     let command_handler = teloxide::filter_command::<Command, _>().branch(
         case![State::Start]
             .branch(case![Command::Help].endpoint(help))
-            .branch(case![Command::Start].endpoint(start)),
+            .branch(case![Command::Start].endpoint(start))
+            .branch(case![Command::Exit].endpoint(exit)),
     );
 
     let message_handler = Update::filter_message()
         .branch(command_handler)
+        .branch(case![State::ReceiveFile].endpoint(receive_file))
         .branch(
             case![State::RunTest {
                 tasks,

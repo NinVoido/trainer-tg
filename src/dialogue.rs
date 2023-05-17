@@ -7,6 +7,7 @@ use teloxide::net::Download;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use teloxide::utils::command::BotCommands;
 use teloxide::{dispatching::dialogue::InMemStorage, prelude::*};
+use tokio::fs;
 use tokio::fs::File;
 
 type MyDialogue = Dialogue<State, InMemStorage<State>>;
@@ -52,13 +53,14 @@ pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> Handl
     if let Some(doc) = msg.document() {
         let fpath = bot.get_file(doc.file.id.clone()).await?;
 
-        let mut fout = File::create(Path::new(&format!("{}.csv", dialogue.chat_id().0))).await?;
+        let mut fout = File::create(Path::new(&format!("tmp/{}.csv", dialogue.chat_id().0))).await?;
         bot.download_file(&*fpath.path, &mut fout).await?;
-        fout.sync_all();
+        fout.sync_all().await?;
 
-        let file = File::open(Path::new(&format!("{}.csv", dialogue.chat_id().0))).await?;
+        let file = File::open(Path::new(&format!("tmp/{}.csv", dialogue.chat_id().0))).await?;
 
-        let mut tasks = Tasks::from_csv(&file.into_std().await).unwrap_or_default();
+        // Can't do proper error handling here because of some stupid async shenanigans, maybe later
+        let tasks = Tasks::from_csv(&file.into_std().await).unwrap_or_default();
 
         dialogue
             .update(State::RunTest {
@@ -67,16 +69,20 @@ pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> Handl
                 answer: None,
             })
             .await?;
+
+        fs::remove_file(&format!("tmp/{}.csv", dialogue.chat_id().0)).await?;
+
+        bot.send_message(dialogue.chat_id(), "Файл загружен! Напишите что-нибудь, чтобы начать тренировку.").await?;
     } else {
-        bot.send_message(dialogue.chat_id(), "Пожалуйста отправьте файл")
+        bot.send_message(dialogue.chat_id(), "Пожалуйста, отправьте файл.")
             .await?;
     }
 
     Ok(())
 }
-pub async fn exit(bot: Bot, dialogue: MyDialogue, msg: Message) -> HandlerResult {
-    dbg!("exited");
-    dialogue.exit().await?;
+pub async fn exit(bot: Bot, dialogue: MyDialogue, _msg: Message) -> HandlerResult {
+    bot.send_message(dialogue.chat_id(), "Тест остановлен").await?;
+    dialogue.update(State::Start).await?;
     Ok(())
 }
 

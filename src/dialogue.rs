@@ -141,8 +141,10 @@ pub async fn receive_type(
 
             let mut msg = print_diff(diff);
             if let Some(comment) = tasks.cur_task().unwrap().clone().comment() {
-                msg += format!("Комментарий: {}", comment).as_str()
+                msg += format!("Комментарий: {}\n", comment).as_str()
             }
+
+            msg += "Напишите что-нибудь чтобы получить следующее задание";
 
             bot.send_message(dialogue.chat_id(), msg).await?;
             dialogue
@@ -152,6 +154,7 @@ pub async fn receive_type(
                 })
                 .await?;
         } else if field == &"skip".to_string() {
+            bot.send_message(dialogue.chat_id(), "Пропущено! Напишите что-нибудь чтобы получить следущее задание").await?;
             dialogue
                 .update(State::RunTest {
                     tasks,

@@ -1,6 +1,6 @@
 use crate::commands::Command;
 use crate::dialogue::format::print_diff;
-use libtrainer_rs::record::{diff, Record};
+use libtrainer_rs::record::Record;
 use libtrainer_rs::task::Tasks;
 use std::path::Path;
 use teloxide::net::Download;
@@ -22,17 +22,14 @@ pub enum State {
     ReceiveFile,
     RunTest {
         tasks: Tasks,
-        cur_task: Option<Record>,
         answer: Option<Record>,
     },
     ReceiveField {
         tasks: Tasks,
-        cur_task: Option<Record>,
         answer: Option<Record>,
     },
     ReceiveAns {
         tasks: Tasks,
-        cur_task: Option<Record>,
         answer: Option<Record>,
         field: String,
     },
@@ -53,7 +50,8 @@ pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> Handl
     if let Some(doc) = msg.document() {
         let fpath = bot.get_file(doc.file.id.clone()).await?;
 
-        let mut fout = File::create(Path::new(&format!("tmp/{}.csv", dialogue.chat_id().0))).await?;
+        let mut fout =
+            File::create(Path::new(&format!("tmp/{}.csv", dialogue.chat_id().0))).await?;
         bot.download_file(&*fpath.path, &mut fout).await?;
         fout.sync_all().await?;
 
@@ -65,14 +63,17 @@ pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> Handl
         dialogue
             .update(State::RunTest {
                 tasks,
-                cur_task: None,
                 answer: None,
             })
             .await?;
 
         fs::remove_file(&format!("tmp/{}.csv", dialogue.chat_id().0)).await?;
 
-        bot.send_message(dialogue.chat_id(), "Файл загружен! Напишите что-нибудь, чтобы начать тренировку.").await?;
+        bot.send_message(
+            dialogue.chat_id(),
+            "Файл загружен! Напишите что-нибудь, чтобы начать тренировку.",
+        )
+        .await?;
     } else {
         bot.send_message(dialogue.chat_id(), "Пожалуйста, отправьте файл.")
             .await?;
@@ -81,7 +82,8 @@ pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> Handl
     Ok(())
 }
 pub async fn exit(bot: Bot, dialogue: MyDialogue, _msg: Message) -> HandlerResult {
-    bot.send_message(dialogue.chat_id(), "Тест остановлен").await?;
+    bot.send_message(dialogue.chat_id(), "Тест остановлен")
+        .await?;
     dialogue.update(State::Start).await?;
     Ok(())
 }
@@ -89,15 +91,15 @@ pub async fn exit(bot: Bot, dialogue: MyDialogue, _msg: Message) -> HandlerResul
 pub async fn run_test(
     bot: Bot,
     dialogue: MyDialogue,
-    (mut tasks, mut cur_task, mut answer): (Tasks, Option<Record>, Option<Record>),
+    (mut tasks, mut answer): (Tasks, Option<Record>),
     msg: Message,
 ) -> HandlerResult {
-    if cur_task.is_none() {
-        cur_task = Some(tasks.get_random_task().clone());
-        answer = Some(Record::copy_format(cur_task.clone().unwrap()));
+    if answer.is_none() {
+        let cur_task = tasks.get_random_task();
+        answer = Some(Record::copy_format(cur_task.clone()));
     }
 
-    if let Some(task) = cur_task {
+    if let Some(task) = answer.clone() {
         bot.send_message(msg.chat.id, task.to_string()).await?;
 
         let strings = task.clone().get_fields();
@@ -112,11 +114,7 @@ pub async fn run_test(
             ]))
             .await?;
         dialogue
-            .update(State::ReceiveField {
-                tasks,
-                cur_task: Some(task),
-                answer,
-            })
+            .update(State::ReceiveField { tasks, answer })
             .await?;
     }
 
@@ -132,15 +130,15 @@ pub async fn help(bot: Bot, msg: Message) -> HandlerResult {
 pub async fn receive_type(
     bot: Bot,
     dialogue: MyDialogue,
-    (tasks, cur_task, answer): (Tasks, Option<Record>, Option<Record>),
+    (tasks, answer): (Tasks, Option<Record>),
     q: CallbackQuery,
 ) -> HandlerResult {
     if let Some(field) = &q.data {
         if field == &"done".to_string() {
-            let diff = diff(&cur_task.clone().unwrap(), &answer.unwrap()).unwrap();
+            let diff = tasks.check_answer(&answer.unwrap()).unwrap();
 
             let mut msg = print_diff(diff);
-            if let Some(comment) = cur_task.unwrap().comment() {
+            if let Some(comment) = tasks.cur_task().unwrap().clone().comment() {
                 msg += format!("Комментарий: {}", comment).as_str()
             }
 
@@ -148,7 +146,6 @@ pub async fn receive_type(
             dialogue
                 .update(State::RunTest {
                     tasks,
-                    cur_task: None,
                     answer: None,
                 })
                 .await?;
@@ -156,7 +153,6 @@ pub async fn receive_type(
             dialogue
                 .update(State::RunTest {
                     tasks,
-                    cur_task: None,
                     answer: None,
                 })
                 .await?;
@@ -166,7 +162,6 @@ pub async fn receive_type(
             dialogue
                 .update(State::ReceiveAns {
                     tasks,
-                    cur_task,
                     answer,
                     field: field.clone(),
                 })
@@ -181,7 +176,7 @@ pub async fn receive_type(
 pub async fn receive_ans(
     bot: Bot,
     dialogue: MyDialogue,
-    (tasks, cur_task, answer, field): (Tasks, Option<Record>, Option<Record>, String),
+    (tasks, answer, field): (Tasks, Option<Record>, String),
     msg: Message,
 ) -> HandlerResult {
     if let Some(ans) = msg.text() {
@@ -192,7 +187,7 @@ pub async fn receive_ans(
                 splitted.push(i.to_string());
             }
 
-            while cur_task.clone().unwrap().field_len(&field) > splitted.len() {
+            while tasks.cur_task().unwrap().clone().field_len(&field) > splitted.len() {
                 splitted.push("".to_string());
             }
 
@@ -202,7 +197,6 @@ pub async fn receive_ans(
             dialogue
                 .update(State::ReceiveField {
                     tasks,
-                    cur_task,
                     answer: Some(answer2),
                 })
                 .await?;

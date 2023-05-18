@@ -57,23 +57,25 @@ pub async fn receive_file(bot: Bot, dialogue: MyDialogue, msg: Message) -> Handl
 
         let file = File::open(Path::new(&format!("tmp/{}.csv", dialogue.chat_id().0))).await?;
 
-        // Can't do proper error handling here because of some stupid async shenanigans, maybe later
         let tasks = Tasks::from_csv(&file.into_std().await).unwrap_or_default();
 
-        dialogue
-            .update(State::RunTest {
-                tasks,
-                answer: None,
-            })
+        if tasks.len() == 0 {
+            bot.send_message(dialogue.chat_id(), "В файле нет заданий")
+                .await?;
+        } else {
+            dialogue
+                .update(State::RunTest {
+                    tasks,
+                    answer: None,
+                })
+                .await?;
+            bot.send_message(
+                dialogue.chat_id(),
+                "Файл загружен! Напишите что-нибудь, чтобы начать тренировку.",
+            )
             .await?;
-
+        }
         fs::remove_file(&format!("tmp/{}.csv", dialogue.chat_id().0)).await?;
-
-        bot.send_message(
-            dialogue.chat_id(),
-            "Файл загружен! Напишите что-нибудь, чтобы начать тренировку.",
-        )
-        .await?;
     } else {
         bot.send_message(dialogue.chat_id(), "Пожалуйста, отправьте файл.")
             .await?;
